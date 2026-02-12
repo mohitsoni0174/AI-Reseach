@@ -33,6 +33,19 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 ALLOWED_CONTENT_TYPES = ["application/pdf"]
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Log server startup for debugging."""
+    print("\n" + "="*60)
+    print("🚀 Server Starting")
+    print("="*60)
+    print(f"API Service: Earnings Call Analyzer v1.0.0")
+    print(f"CORS Origins: {ALLOWED_ORIGINS}")
+    print(f"Max File Size: {MAX_FILE_SIZE // (1024 * 1024)} MB")
+    print("Endpoints: GET / (health), POST /analyze (PDF upload)")
+    print("="*60 + "\n")
+
+
 @app.get("/")
 def health_check():
     """Health check endpoint."""
