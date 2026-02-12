@@ -1,0 +1,45 @@
+# Render Deployment Configuration
+# https://render.com/docs/infrastructure-as-code
+
+services:
+  # Backend API Service
+  - type: web
+    name: earnings-analyzer-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: OPENAI_API_KEY
+        sync: false  # Set this manually in Render dashboard for security
+    healthCheckPath: /
+    autoDeploy: true
+    rootDir: backend
+    
+  # Frontend Static Site
+  - type: web
+    name: earnings-analyzer-frontend
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
+      - key: VITE_API_URL
+        value: https://ai-research.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+    autoDeploy: true
+    rootDir: frontend
