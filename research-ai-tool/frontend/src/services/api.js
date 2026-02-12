@@ -18,24 +18,26 @@ console.log('📦 Vite API URL env var:', import.meta.env.VITE_API_URL);
 // Create axios instance with production-ready config
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 120000, // 120 seconds timeout for Render cold-start
+  timeout: 240000, // 240 seconds (4 min) timeout for Render cold-start wake time
   withCredentials: false, // Set to true if using authentication cookies
   headers: {
     'Content-Type': 'multipart/form-data',
   },
 });
 
+const MAX_RETRIES = 2; // Retry up to 2 times for aggressive cold-start resilience
+
 /**
- * Retry logic for Render cold-start behavior (30-60s wake time)
+ * Retry logic for Render cold-start behavior (can take 30-120s to wake)
  * @param {Function} requestFn - Async function that makes the request
- * @param {number} maxRetries - Maximum number of retries (default: 1)
+ * @param {number} maxRetries - Maximum number of retries (default: 2)
  * @returns {Promise} Result from successful request
  */
-const withRetry = async (requestFn, maxRetries = 1) => {
+const withRetry = async (requestFn, maxRetries = MAX_RETRIES) => {
   let lastError;
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     try {
-      console.log(`🔄 Attempt ${attempt}/${maxRetries + 1}`);
+      console.log(`🔄 Attempt ${attempt}/${maxRetries + 1} - Render cold-start handled`);
       return await requestFn();
     } catch (error) {
       lastError = error;
@@ -43,8 +45,8 @@ const withRetry = async (requestFn, maxRetries = 1) => {
       const isNetworkError = error.message?.includes('Network') || !error.response;
       
       if ((isTimeout || isNetworkError) && attempt <= maxRetries) {
-        const waitTime = 2000 * attempt;
-        console.warn(`⏳ Request failed, retrying in ${waitTime}ms...`);
+        const waitTime = 3000 * attempt; // 3s, 6s, 9s between retries
+        console.warn(`⏳ Cold-start in progress, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       } else {
         throw error;
@@ -124,7 +126,7 @@ const diagnoseError = (error) => {
     // Detect timeout
     if (error.code === 'ECONNABORTED') {
       diagnosis.timeoutIssue = true;
-      diagnosis.message = 'Request timeout (120 seconds) - Server took too long to respond even with retries';
+      diagnosis.message = 'Request timeout (240s) - Server took too long even after 2 retries. Render may be overloaded.';
     }
 
     console.error('🌐 Network Error Details:', diagnosis.details);
@@ -157,9 +159,9 @@ export const checkServerHealth = async () => {
     console.log('🏥 Performing health check on', API_BASE_URL);
     const response = await withRetry(() => 
       apiClient.get('/', {
-        timeout: 120000, // 120 seconds to allow cold-start wake
-      }),
-      1 // Retry once
+        timeout: 240000, // 240 seconds to allow cold-start wake
+      })
+      // Automatically retries MAX_RETRIES times on timeout/network error
     );
 
     console.log('✅ Health Check Passed:', response.data);
@@ -214,9 +216,9 @@ export const uploadAndAnalyzePDF = async (file, onUploadProgress) => {
             onUploadProgress(percentCompleted);
           }
         },
-        timeout: 120000, // 2 minutes for large files + cold-start
-      }),
-      1 // Retry once on timeout/network error
+        timeout: 240000, // 4 minutes for uploads + cold-start handling
+      })
+      // Automatically retries MAX_RETRIES times on timeout/network error
     );
 
     console.log('✅ Upload successful:', response.data);
@@ -231,7 +233,7 @@ export const uploadAndAnalyzePDF = async (file, onUploadProgress) => {
     if (diagnosis.corsIssue) {
       userMessage = '🚫 CORS Error: Backend needs to allow requests from this frontend URL';
     } else if (diagnosis.timeoutIssue) {
-      userMessage = '⏱️ Request timeout (after retries): Backend taking too long. Render cold-start can take 30-60 seconds on first request. Try again.';
+      userMessage = '⏱️ Request still timing out after 2 retries (4 min total). Render backend may be overloaded. Try again in a few minutes.';
     } else if (diagnosis.type === 'NETWORK_ERROR') {
       userMessage = `🌐 Network Error: Cannot reach server at ${API_BASE_URL}`;
     }
@@ -273,10 +275,10 @@ if (typeof window !== 'undefined') {
   };
 
   console.log('🛠️ Debug tools available as window.apiDebug');
-  console.log('   - window.apiDebug.testHealth() - Test connection (with auto-retry)');
+  console.log('   - window.apiDebug.testHealth() - Test connection (with auto-retries)');
   console.log('   - window.apiDebug.testFetch() - Alias for testHealth');
   console.log('   - window.apiDebug.baseUrl - Current API URL');
-  console.log('⏱️  Configured for Render: 120s timeout + 1 retry for cold-start (30-60s wake time)');
+  console.log('⏱️  Configured for Render free tier: 240s timeout + 2 auto-retries on timeout/network errors.');
 }
 
 export default apiClient;
