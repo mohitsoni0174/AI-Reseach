@@ -18,12 +18,41 @@ console.log('📦 Vite API URL env var:', import.meta.env.VITE_API_URL);
 // Create axios instance with production-ready config
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60 seconds timeout
+  timeout: 120000, // 120 seconds timeout for Render cold-start
   withCredentials: false, // Set to true if using authentication cookies
   headers: {
     'Content-Type': 'multipart/form-data',
   },
 });
+
+/**
+ * Retry logic for Render cold-start behavior (30-60s wake time)
+ * @param {Function} requestFn - Async function that makes the request
+ * @param {number} maxRetries - Maximum number of retries (default: 1)
+ * @returns {Promise} Result from successful request
+ */
+const withRetry = async (requestFn, maxRetries = 1) => {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    try {
+      console.log(`🔄 Attempt ${attempt}/${maxRetries + 1}`);
+      return await requestFn();
+    } catch (error) {
+      lastError = error;
+      const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
+      const isNetworkError = error.message?.includes('Network') || !error.response;
+      
+      if ((isTimeout || isNetworkError) && attempt <= maxRetries) {
+        const waitTime = 2000 * attempt;
+        console.warn(`⏳ Request failed, retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw lastError;
+};
 
 // Request interceptor - Log all outgoing requests
 apiClient.interceptors.request.use(
@@ -95,7 +124,7 @@ const diagnoseError = (error) => {
     // Detect timeout
     if (error.code === 'ECONNABORTED') {
       diagnosis.timeoutIssue = true;
-      diagnosis.message = 'Request timeout (60 seconds) - Server took too long to respond';
+      diagnosis.message = 'Request timeout (120 seconds) - Server took too long to respond even with retries';
     }
 
     console.error('🌐 Network Error Details:', diagnosis.details);
@@ -120,14 +149,18 @@ const diagnoseError = (error) => {
 
 /**
  * Test endpoint to verify backend connectivity
+ * With retry logic for Render cold-start (up to 1 retry)
  * @returns {Promise<Object>} Health check response
  */
 export const checkServerHealth = async () => {
   try {
     console.log('🏥 Performing health check on', API_BASE_URL);
-    const response = await apiClient.get('/', {
-      timeout: 10000, // Shorter timeout for health check
-    });
+    const response = await withRetry(() => 
+      apiClient.get('/', {
+        timeout: 120000, // 120 seconds to allow cold-start wake
+      }),
+      1 // Retry once
+    );
 
     console.log('✅ Health Check Passed:', response.data);
     console.table({
@@ -165,23 +198,26 @@ export const uploadAndAnalyzePDF = async (file, onUploadProgress) => {
   formData.append('file', file);
 
   try {
-    // Make POST request with progress tracking
-    const response = await apiClient.post('/analyze', formData, {
-      onUploadProgress: (progressEvent) => {
-        // Calculate upload percentage
-        const percentCompleted = Math.round(
-          (progressEvent.loaded * 100) / progressEvent.total
-        );
+    // Make POST request with progress tracking and retry for cold-start
+    const response = await withRetry(() => 
+      apiClient.post('/analyze', formData, {
+        onUploadProgress: (progressEvent) => {
+          // Calculate upload percentage
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
 
-        console.log(`📊 Upload progress: ${percentCompleted}%`);
+          console.log(`📊 Upload progress: ${percentCompleted}%`);
 
-        // Call progress callback if provided
-        if (onUploadProgress) {
-          onUploadProgress(percentCompleted);
-        }
-      },
-      timeout: 120000, // 2 minutes for large files
-    });
+          // Call progress callback if provided
+          if (onUploadProgress) {
+            onUploadProgress(percentCompleted);
+          }
+        },
+        timeout: 120000, // 2 minutes for large files + cold-start
+      }),
+      1 // Retry once on timeout/network error
+    );
 
     console.log('✅ Upload successful:', response.data);
     return response.data;
@@ -195,7 +231,7 @@ export const uploadAndAnalyzePDF = async (file, onUploadProgress) => {
     if (diagnosis.corsIssue) {
       userMessage = '🚫 CORS Error: Backend needs to allow requests from this frontend URL';
     } else if (diagnosis.timeoutIssue) {
-      userMessage = '⏱️ Request timeout: Backend took too long to respond. Try again.';
+      userMessage = '⏱️ Request timeout (after retries): Backend taking too long. Render cold-start can take 30-60 seconds on first request. Try again.';
     } else if (diagnosis.type === 'NETWORK_ERROR') {
       userMessage = `🌐 Network Error: Cannot reach server at ${API_BASE_URL}`;
     }
@@ -237,9 +273,10 @@ if (typeof window !== 'undefined') {
   };
 
   console.log('🛠️ Debug tools available as window.apiDebug');
-  console.log('   - window.apiDebug.testHealth() - Test connection');
+  console.log('   - window.apiDebug.testHealth() - Test connection (with auto-retry)');
   console.log('   - window.apiDebug.testFetch() - Alias for testHealth');
   console.log('   - window.apiDebug.baseUrl - Current API URL');
+  console.log('⏱️  Configured for Render: 120s timeout + 1 retry for cold-start (30-60s wake time)');
 }
 
 export default apiClient;
