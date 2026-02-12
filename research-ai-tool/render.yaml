@@ -30,7 +30,7 @@ services:
       - key: NODE_VERSION
         value: 18.17.0
       - key: VITE_API_URL
-        value: https://ai-research.onrender.com
+        value: https://ai-reseach.onrender.com
     routes:
       - type: rewrite
         source: /*

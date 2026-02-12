@@ -6,9 +6,8 @@
 
 import axios from 'axios';
 
-// Load API URL from environment or use local fallback
-const API_BASE_URL = import.meta.env.VITE_API_URL;
-
+// Load API URL from environment
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ai-reseach.onrender.com';
 
 // Log API configuration for debugging
 console.log('🔌 API Service Initialized');
