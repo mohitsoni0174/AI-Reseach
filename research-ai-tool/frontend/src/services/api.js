@@ -7,7 +7,8 @@
 import axios from 'axios';
 
 // Load API URL from environment or use local fallback
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL;
+
 
 // Log API configuration for debugging
 console.log('🔌 API Service Initialized');
