@@ -23,6 +23,7 @@ services:
     name: earnings-analyzer-frontend
     runtime: node
     plan: free
+    rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     envVars:
@@ -42,4 +43,3 @@ services:
         name: X-Content-Type-Options
         value: nosniff
     autoDeploy: true
-    rootDir: frontend
