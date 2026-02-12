@@ -7,12 +7,14 @@ import { useState } from 'react';
 import Header from './components/Header';
 import UploadCard from './components/UploadCard';
 import Toast from './components/Toast';
+import APIStatus from './components/APIStatus';
 
 function App() {
   const [errorMessage, setErrorMessage] = useState(null);
 
   // Handle errors from child components
   const handleError = (message) => {
+    console.error('🚨 App Error:', message);
     setErrorMessage(message);
   };
 
@@ -70,6 +72,9 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* API Status Indicator */}
+      <APIStatus />
 
       {/* Toast Notification */}
       {errorMessage && (
